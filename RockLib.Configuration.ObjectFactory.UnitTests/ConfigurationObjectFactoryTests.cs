@@ -1,7 +1,9 @@
 ﻿using Microsoft.Extensions.Configuration;
 using RockLib.Configuration.ObjectFactory;
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using Xunit;
@@ -10,6 +12,185 @@ namespace Tests
 {
     public class ConfigurationObjectFactoryTests
     {
+        [Fact]
+        public void SupportsMembersOfTypeFuncOfT()
+        {
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string> {
+                { "baz:foo", "123"},
+                { "baz:bar:type", typeof(AnotherBar).AssemblyQualifiedName },
+                { "baz:bar:value:garply", "abc" } })
+                .Build();
+
+            var baz = config.GetSection("baz").Create<Baz>();
+
+            Assert.Equal(123, baz.GetFoo());
+            var bar = baz.GetBar();
+            Assert.IsType<AnotherBar>(bar);
+            var anotherBar = (AnotherBar)bar;
+            Assert.Equal("abc", anotherBar.Garply);
+        }
+
+        public class Baz
+        {
+            private readonly Func<int> _foo;
+            private readonly Func<IBar> _bar;
+
+            public Baz(Func<int> foo, Func<IBar> bar)
+            {
+                _foo = foo;
+                _bar = bar;
+            }
+
+            public int GetFoo() => _foo();
+            public IBar GetBar() => _bar();
+        }
+
+        [Fact]
+        public void MissingConstructorParametersAreSuppliedByTheResolver()
+        {
+            var config = new ConfigurationBuilder().Build(); // empty config!
+
+            var bar = new Bar();
+            var resolver = new Resolver(t => bar, t => t == typeof(IBar));
+
+            var foo = config.Create<Foo>(resolver: resolver);
+
+            Assert.Same(bar, foo.Bar);
+        }
+
+        public class Foo
+        {
+            public Foo(IBar bar) => Bar = bar;
+            public IBar Bar { get; }
+        }
+
+        public interface IBar { }
+
+        public class Bar : IBar { }
+
+        public class AnotherBar : IBar
+        {
+            public AnotherBar(string garply) => Garply = garply;
+            public string Garply { get; }
+        }
+
+        public class PascalCase
+        {
+            public string ThingOne { get; set; }
+            public string ThingTwo { get; set; }
+            public string ThingThree { get; set; }
+            public string ThingFour { get; set; }
+            public string ThingFive { get; set; }
+        }
+
+        public class camelCase
+        {
+            public string thingOne { get; set; }
+            public string thingTwo { get; set; }
+            public string thingThree { get; set; }
+            public string thingFour { get; set; }
+            public string thingFive { get; set; }
+        }
+
+        public class Snake_Case
+        {
+            public string Thing_One { get; set; }
+            public string Thing_Two { get; set; }
+            public string Thing_Three { get; set; }
+            public string Thing_Four { get; set; }
+            public string Thing_Five { get; set; }
+        }
+
+        public class nocase
+        {
+            public string thingone { get; set; }
+            public string thingtwo { get; set; }
+            public string thingthree { get; set; }
+            public string thingfour { get; set; }
+            public string thingfive { get; set; }
+        }
+
+        public class UPPERCaseWORDS
+        {
+            public string THINGOne { get; set; }
+            public string ThingTWO { get; set; }
+            public string Thing_Three { get; set; }
+            public string Thing_Four { get; set; }
+        }
+
+        [Fact]
+        public void CanMixAndMatchIdentifierCasing()
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    { "foo:ThingOne", "a" },    // Pascal
+                    { "foo:thingTwo", "b" },    // Camel
+                    { "foo:thing-three", "c" }, // Kebab
+                    { "foo:thing_four", "d" },  // Snake
+                    { "foo:thingfive", "e" },   // None
+                })
+                .Build();
+
+            var fooSection = config.GetSection("foo");
+
+            var pascal = fooSection.Create<PascalCase>();
+
+            Assert.Equal("a", pascal.ThingOne);
+            Assert.Equal("b", pascal.ThingTwo);
+            Assert.Equal("c", pascal.ThingThree);
+            Assert.Equal("d", pascal.ThingFour);
+            Assert.Equal("e", pascal.ThingFive);
+
+            var camel = fooSection.Create<camelCase>();
+
+            Assert.Equal("a", camel.thingOne);
+            Assert.Equal("b", camel.thingTwo);
+            Assert.Equal("c", camel.thingThree);
+            Assert.Equal("d", camel.thingFour);
+            Assert.Equal("e", camel.thingFive);
+
+            var snake = fooSection.Create<Snake_Case>();
+
+            Assert.Equal("a", snake.Thing_One);
+            Assert.Equal("b", snake.Thing_Two);
+            Assert.Equal("c", snake.Thing_Three);
+            Assert.Equal("d", snake.Thing_Four);
+            Assert.Equal("e", snake.Thing_Five);
+
+            var none = fooSection.Create<nocase>();
+
+            Assert.Equal("a", none.thingone);
+            Assert.Equal("b", none.thingtwo);
+            Assert.Equal("c", none.thingthree);
+            Assert.Equal("d", none.thingfour);
+            Assert.Equal("e", none.thingfive);
+        }
+
+
+        [Fact]
+        public void CanHandleUPPERCasedWORDS()
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    { "foo:thing-one", "a" },
+                    { "foo:thing-two", "b" },
+                    { "foo:thingTHREE", "c" },
+                    { "foo:THINGFour", "d" },
+                })
+                .Build();
+
+            var fooSection = config.GetSection("foo");
+
+            var pascal = fooSection.Create<UPPERCaseWORDS>();
+
+            Assert.Equal("a", pascal.THINGOne);
+            Assert.Equal("b", pascal.ThingTWO);
+            Assert.Equal("c", pascal.Thing_Three);
+            Assert.Equal("d", pascal.Thing_Four);
+        }
+
         [Fact]
         public void CanSpecifyConvertMethodWithConvertMethodAttribute()
         {
@@ -102,63 +283,63 @@ namespace Tests
 
             Assert.IsType<DefaultHasDefaultType>(foo.GarplyBar);
             Assert.Equal(123.45, ((DefaultHasDefaultType)foo.GarplyBar).Fred);
-            Assert.Equal(1, foo.GarplyBarArray.Length);
+            Assert.Single(foo.GarplyBarArray);
             Assert.IsType<DefaultHasDefaultType>(foo.GarplyBarArray[0]);
             Assert.Equal(123.45, ((DefaultHasDefaultType)foo.GarplyBarArray[0]).Fred);
-            Assert.Equal(1, foo.GarplyBarList.Count);
+            Assert.Single(foo.GarplyBarList);
             Assert.IsType<DefaultHasDefaultType>(foo.GarplyBarList[0]);
             Assert.Equal(123.45, ((DefaultHasDefaultType)foo.GarplyBarList[0]).Fred);
-            Assert.Equal(1, foo.GarplyBarDictionary.Count);
+            Assert.Single(foo.GarplyBarDictionary);
             Assert.IsType<DefaultHasDefaultType>(foo.GarplyBarDictionary["spam"]);
             Assert.Equal(123.45, ((DefaultHasDefaultType)foo.GarplyBarDictionary["spam"]).Fred);
 
             Assert.IsType<DefaultHasDefaultType>(foo.GraultBar);
             Assert.Equal(123.45, ((DefaultHasDefaultType)foo.GraultBar).Fred);
-            Assert.Equal(1, foo.GraultBarArray.Length);
+            Assert.Single(foo.GraultBarArray);
             Assert.IsType<DefaultHasDefaultType>(foo.GraultBarArray[0]);
             Assert.Equal(123.45, ((DefaultHasDefaultType)foo.GraultBarArray[0]).Fred);
-            Assert.Equal(1, foo.GraultBarList.Count);
+            Assert.Single(foo.GraultBarList);
             Assert.IsType<DefaultHasDefaultType>(foo.GraultBarList[0]);
             Assert.Equal(123.45, ((DefaultHasDefaultType)foo.GraultBarList[0]).Fred);
-            Assert.Equal(1, foo.GraultBarDictionary.Count);
+            Assert.Single(foo.GraultBarDictionary);
             Assert.IsType<DefaultHasDefaultType>(foo.GraultBarDictionary["spam"]);
             Assert.Equal(123.45, ((DefaultHasDefaultType)foo.GraultBarDictionary["spam"]).Fred);
 
-            Assert.Equal(1, foo.BarReadonlyList.Count);
+            Assert.Single(foo.BarReadonlyList);
             Assert.IsType<DefaultHasDefaultType>(foo.BarReadonlyList[0]);
             Assert.Equal(123.45, ((DefaultHasDefaultType)foo.BarReadonlyList[0]).Fred);
-            Assert.Equal(1, foo.BarReadonlyDictionary.Count);
+            Assert.Single(foo.BarReadonlyDictionary);
             Assert.IsType<DefaultHasDefaultType>(foo.BarReadonlyDictionary["spam"]);
             Assert.Equal(123.45, ((DefaultHasDefaultType)foo.BarReadonlyDictionary["spam"]).Fred);
 
             Assert.IsType<DefaultHasNoDefaultType>(foo.Baz);
             Assert.Equal(-456.78, ((DefaultHasNoDefaultType)foo.Baz).Waldo);
-            Assert.Equal(1, foo.BazArray.Length);
+            Assert.Single(foo.BazArray);
             Assert.IsType<DefaultHasNoDefaultType>(foo.BazArray[0]);
             Assert.Equal(-456.78, ((DefaultHasNoDefaultType)foo.BazArray[0]).Waldo);
-            Assert.Equal(1, foo.BazList.Count);
+            Assert.Single(foo.BazList);
             Assert.IsType<DefaultHasNoDefaultType>(foo.BazList[0]);
             Assert.Equal(-456.78, ((DefaultHasNoDefaultType)foo.BazList[0]).Waldo);
-            Assert.Equal(1, foo.BazDictionary.Count);
+            Assert.Single(foo.BazDictionary);
             Assert.IsType<DefaultHasNoDefaultType>(foo.BazDictionary["spam"]);
             Assert.Equal(-456.78, ((DefaultHasNoDefaultType)foo.BazDictionary["spam"]).Waldo);
 
-            Assert.Equal(1, foo.BazReadonlyList.Count);
+            Assert.Single(foo.BazReadonlyList);
             Assert.IsType<DefaultHasNoDefaultType>(foo.BazReadonlyList[0]);
             Assert.Equal(-456.78, ((DefaultHasNoDefaultType)foo.BazReadonlyList[0]).Waldo);
-            Assert.Equal(1, foo.BazReadonlyDictionary.Count);
+            Assert.Single(foo.BazReadonlyDictionary);
             Assert.IsType<DefaultHasNoDefaultType>(foo.BazReadonlyDictionary["spam"]);
             Assert.Equal(-456.78, ((DefaultHasNoDefaultType)foo.BazReadonlyDictionary["spam"]).Waldo);
 
             Assert.IsType<DefaultIAlsoHasNoDefaultType>(foo.Qux);
             Assert.Equal(987.65, ((DefaultIAlsoHasNoDefaultType)foo.Qux).Thud);
-            Assert.Equal(1, foo.QuxArray.Length);
+            Assert.Single(foo.QuxArray);
             Assert.IsType<DefaultIAlsoHasNoDefaultType>(foo.QuxArray[0]);
             Assert.Equal(987.65, ((DefaultIAlsoHasNoDefaultType)foo.QuxArray[0]).Thud);
-            Assert.Equal(1, foo.QuxList.Count);
+            Assert.Single(foo.QuxList);
             Assert.IsType<DefaultIAlsoHasNoDefaultType>(foo.QuxList[0]);
             Assert.Equal(987.65, ((DefaultIAlsoHasNoDefaultType)foo.QuxList[0]).Thud);
-            Assert.Equal(1, foo.QuxDictionary.Count);
+            Assert.Single(foo.QuxDictionary);
             Assert.IsType<DefaultIAlsoHasNoDefaultType>(foo.QuxDictionary["spam"]);
             Assert.Equal(987.65, ((DefaultIAlsoHasNoDefaultType)foo.QuxDictionary["spam"]).Thud);
         }
@@ -197,63 +378,63 @@ namespace Tests
 
             Assert.IsType<DefaultHasLocallyDefinedDefaultType>(foo.GarplyBar);
             Assert.Equal(123.45, ((DefaultHasLocallyDefinedDefaultType)foo.GarplyBar).Fred);
-            Assert.Equal(1, foo.GarplyBarArray.Length);
+            Assert.Single(foo.GarplyBarArray);
             Assert.IsType<DefaultHasLocallyDefinedDefaultType>(foo.GarplyBarArray[0]);
             Assert.Equal(123.45, ((DefaultHasLocallyDefinedDefaultType)foo.GarplyBarArray[0]).Fred);
-            Assert.Equal(1, foo.GarplyBarList.Count);
+            Assert.Single(foo.GarplyBarList);
             Assert.IsType<DefaultHasLocallyDefinedDefaultType>(foo.GarplyBarList[0]);
             Assert.Equal(123.45, ((DefaultHasLocallyDefinedDefaultType)foo.GarplyBarList[0]).Fred);
-            Assert.Equal(1, foo.GarplyBarDictionary.Count);
+            Assert.Single(foo.GarplyBarDictionary);
             Assert.IsType<DefaultHasLocallyDefinedDefaultType>(foo.GarplyBarDictionary["spam"]);
             Assert.Equal(123.45, ((DefaultHasLocallyDefinedDefaultType)foo.GarplyBarDictionary["spam"]).Fred);
 
             Assert.IsType<DefaultHasLocallyDefinedDefaultType>(foo.GraultBar);
             Assert.Equal(123.45, ((DefaultHasLocallyDefinedDefaultType)foo.GraultBar).Fred);
-            Assert.Equal(1, foo.GraultBarArray.Length);
+            Assert.Single(foo.GraultBarArray);
             Assert.IsType<DefaultHasLocallyDefinedDefaultType>(foo.GraultBarArray[0]);
             Assert.Equal(123.45, ((DefaultHasLocallyDefinedDefaultType)foo.GraultBarArray[0]).Fred);
-            Assert.Equal(1, foo.GraultBarList.Count);
+            Assert.Single(foo.GraultBarList);
             Assert.IsType<DefaultHasLocallyDefinedDefaultType>(foo.GraultBarList[0]);
             Assert.Equal(123.45, ((DefaultHasLocallyDefinedDefaultType)foo.GraultBarList[0]).Fred);
-            Assert.Equal(1, foo.GraultBarDictionary.Count);
+            Assert.Single(foo.GraultBarDictionary);
             Assert.IsType<DefaultHasLocallyDefinedDefaultType>(foo.GraultBarDictionary["spam"]);
             Assert.Equal(123.45, ((DefaultHasLocallyDefinedDefaultType)foo.GraultBarDictionary["spam"]).Fred);
 
-            Assert.Equal(1, foo.BarReadonlyList.Count);
+            Assert.Single(foo.BarReadonlyList);
             Assert.IsType<DefaultHasLocallyDefinedDefaultType>(foo.BarReadonlyList[0]);
             Assert.Equal(123.45, ((DefaultHasLocallyDefinedDefaultType)foo.BarReadonlyList[0]).Fred);
-            Assert.Equal(1, foo.BarReadonlyDictionary.Count);
+            Assert.Single(foo.BarReadonlyDictionary);
             Assert.IsType<DefaultHasLocallyDefinedDefaultType>(foo.BarReadonlyDictionary["spam"]);
             Assert.Equal(123.45, ((DefaultHasLocallyDefinedDefaultType)foo.BarReadonlyDictionary["spam"]).Fred);
 
             Assert.IsType<DefaultHasNoDefaultType>(foo.Baz);
             Assert.Equal(-456.78, ((DefaultHasNoDefaultType)foo.Baz).Waldo);
-            Assert.Equal(1, foo.BazArray.Length);
+            Assert.Single(foo.BazArray);
             Assert.IsType<DefaultHasNoDefaultType>(foo.BazArray[0]);
             Assert.Equal(-456.78, ((DefaultHasNoDefaultType)foo.BazArray[0]).Waldo);
-            Assert.Equal(1, foo.BazList.Count);
+            Assert.Single(foo.BazList);
             Assert.IsType<DefaultHasNoDefaultType>(foo.BazList[0]);
             Assert.Equal(-456.78, ((DefaultHasNoDefaultType)foo.BazList[0]).Waldo);
-            Assert.Equal(1, foo.BazDictionary.Count);
+            Assert.Single(foo.BazDictionary);
             Assert.IsType<DefaultHasNoDefaultType>(foo.BazDictionary["spam"]);
             Assert.Equal(-456.78, ((DefaultHasNoDefaultType)foo.BazDictionary["spam"]).Waldo);
 
-            Assert.Equal(1, foo.BazReadonlyList.Count);
+            Assert.Single(foo.BazReadonlyList);
             Assert.IsType<DefaultHasNoDefaultType>(foo.BazReadonlyList[0]);
             Assert.Equal(-456.78, ((DefaultHasNoDefaultType)foo.BazReadonlyList[0]).Waldo);
-            Assert.Equal(1, foo.BazReadonlyDictionary.Count);
+            Assert.Single(foo.BazReadonlyDictionary);
             Assert.IsType<DefaultHasNoDefaultType>(foo.BazReadonlyDictionary["spam"]);
             Assert.Equal(-456.78, ((DefaultHasNoDefaultType)foo.BazReadonlyDictionary["spam"]).Waldo);
 
             Assert.IsType<DefaultIAlsoHasNoDefaultType>(foo.Qux);
             Assert.Equal(987.65, ((DefaultIAlsoHasNoDefaultType)foo.Qux).Thud);
-            Assert.Equal(1, foo.QuxArray.Length);
+            Assert.Single(foo.QuxArray);
             Assert.IsType<DefaultIAlsoHasNoDefaultType>(foo.QuxArray[0]);
             Assert.Equal(987.65, ((DefaultIAlsoHasNoDefaultType)foo.QuxArray[0]).Thud);
-            Assert.Equal(1, foo.QuxList.Count);
+            Assert.Single(foo.QuxList);
             Assert.IsType<DefaultIAlsoHasNoDefaultType>(foo.QuxList[0]);
             Assert.Equal(987.65, ((DefaultIAlsoHasNoDefaultType)foo.QuxList[0]).Thud);
-            Assert.Equal(1, foo.QuxDictionary.Count);
+            Assert.Single(foo.QuxDictionary);
             Assert.IsType<DefaultIAlsoHasNoDefaultType>(foo.QuxDictionary["spam"]);
             Assert.Equal(987.65, ((DefaultIAlsoHasNoDefaultType)foo.QuxDictionary["spam"]).Thud);
         }
@@ -276,7 +457,7 @@ namespace Tests
             var defaultTypes = new DefaultTypes { { typeof(HasReadWriteConcreteProperties), "bar", typeof(InheritedHasReadWriteProperties) } };
             var foo = fooSection.Create<HasReadWriteConcreteProperties>(defaultTypes: defaultTypes);
 
-            Assert.Equal(true, foo.Bar.Qux);
+            Assert.True(foo.Bar.Qux);
             Assert.Equal(123.45, foo.Bar.Garply);
             Assert.IsType<InheritedHasReadWriteProperties>(foo.Bar);
             var inheritedBar = (InheritedHasReadWriteProperties)foo.Bar;
@@ -302,7 +483,7 @@ namespace Tests
             var defaultTypes = new DefaultTypes { { typeof(HasReadWriteProperties), typeof(InheritedHasReadWriteProperties) } };
             var foo = fooSection.Create<HasReadWriteConcreteProperties>(defaultTypes: defaultTypes);
 
-            Assert.Equal(true, foo.Bar.Qux);
+            Assert.True(foo.Bar.Qux);
             Assert.Equal(123.45, foo.Bar.Garply);
             Assert.IsType<InheritedHasReadWriteProperties>(foo.Bar);
             var inheritedBar = (InheritedHasReadWriteProperties)foo.Bar;
@@ -328,7 +509,7 @@ namespace Tests
             var defaultTypes = new DefaultTypes { { typeof(HasReadWriteConcreteProperties), "bar", typeof(InheritedHasReadWriteProperties) } };
             var foo = fooSection.Create<HasReadWriteConcreteProperties>(defaultTypes: defaultTypes);
 
-            Assert.Equal(true, foo.Bar.Qux);
+            Assert.True(foo.Bar.Qux);
             Assert.Equal(123.45, foo.Bar.Garply);
             Assert.IsType<HasReadWriteProperties>(foo.Bar);
             Assert.Equal(guid, foo.Baz.Grault);
@@ -352,7 +533,7 @@ namespace Tests
             var defaultTypes = new DefaultTypes { { typeof(HasReadWriteProperties), typeof(InheritedHasReadWriteProperties) } };
             var foo = fooSection.Create<HasReadWriteConcreteProperties>(defaultTypes: defaultTypes);
 
-            Assert.Equal(true, foo.Bar.Qux);
+            Assert.True(foo.Bar.Qux);
             Assert.Equal(123.45, foo.Bar.Garply);
             Assert.IsType<HasReadWriteProperties>(foo.Bar);
             Assert.Equal(guid, foo.Baz.Grault);
@@ -427,15 +608,41 @@ namespace Tests
         }
 
         [Fact]
+        public void TypeSpecificationIsCaseInsensitive()
+        {
+            var guid = Guid.NewGuid();
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    { "foo:bar:type", typeof(HasReadWriteProperties).AssemblyQualifiedName },
+                    { "foo:bar:value:qux", "true" },
+                    { "foo:bar:value:garply", "123.45" },
+                    { "foo:baz:Type", typeof(AlsoHasReadWriteProperties).AssemblyQualifiedName },
+                    { "foo:baz:Value:grault", guid.ToString() },
+                })
+                .Build();
+
+            var fooSection = config.GetSection("foo");
+            var foo = fooSection.Create<HasReadWriteInterfaceProperties>();
+
+            Assert.IsType<HasReadWriteProperties>(foo.Bar);
+            Assert.True(foo.Bar.Qux);
+            Assert.Equal(123.45, foo.Bar.Garply);
+            Assert.IsType<AlsoHasReadWriteProperties>(foo.Baz);
+            Assert.Equal(guid, foo.Baz.Grault);
+        }
+
+        [Fact]
         public void CanBindToReadWriteSimpleProperties()
         {
             var now = DateTime.Now;
+            var quxType = GetType();
             var config = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string>
                 {
                     { "foo:bar", "123" },
                     { "foo:baz", now.ToString("O") },
-                    { "foo:qux", "true" },
+                    { "foo:qux", quxType.AssemblyQualifiedName },
                 })
                 .Build();
 
@@ -444,7 +651,7 @@ namespace Tests
 
             Assert.Equal(123, foo.Bar);
             Assert.Equal(now, foo.Baz);
-            Assert.Equal(true, foo.Qux);
+            Assert.Equal(quxType, foo.Qux);
         }
 
         [Fact]
@@ -465,7 +672,7 @@ namespace Tests
 
             Assert.Equal(123, foo.Bar);
             Assert.Equal(now, foo.Baz);
-            Assert.Equal(true, foo.Qux);
+            Assert.True(foo.Qux);
         }
 
         [Fact]
@@ -484,7 +691,7 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasReadWriteConcreteProperties>();
 
-            Assert.Equal(true, foo.Bar.Qux);
+            Assert.True(foo.Bar.Qux);
             Assert.Equal(123.45, foo.Bar.Garply);
             Assert.Equal(guid, foo.Baz.Grault);
         }
@@ -505,7 +712,7 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasConcreteConstructorParameters>();
 
-            Assert.Equal(true, foo.Bar.Qux);
+            Assert.True(foo.Bar.Qux);
             Assert.Equal(123.45, foo.Bar.Garply);
             Assert.Equal(guid, foo.Baz.Grault);
         }
@@ -528,7 +735,7 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasReadWriteConcreteProperties>();
 
-            Assert.Equal(true, foo.Bar.Qux);
+            Assert.True(foo.Bar.Qux);
             Assert.Equal(123.45, foo.Bar.Garply);
             Assert.IsType<InheritedHasReadWriteProperties>(foo.Bar);
             var inheritedBar = (InheritedHasReadWriteProperties)foo.Bar;
@@ -554,7 +761,7 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasConcreteConstructorParameters>();
 
-            Assert.Equal(true, foo.Bar.Qux);
+            Assert.True(foo.Bar.Qux);
             Assert.Equal(123.45, foo.Bar.Garply);
             Assert.IsType<InheritedHasConstructorParameters>(foo.Bar);
             var inheritedBar = (InheritedHasConstructorParameters)foo.Bar;
@@ -581,7 +788,7 @@ namespace Tests
             var foo = fooSection.Create<HasReadWriteInterfaceProperties>();
 
             Assert.IsType<HasReadWriteProperties>(foo.Bar);
-            Assert.Equal(true, foo.Bar.Qux);
+            Assert.True(foo.Bar.Qux);
             Assert.Equal(123.45, foo.Bar.Garply);
             Assert.IsType<AlsoHasReadWriteProperties>(foo.Baz);
             Assert.Equal(guid, foo.Baz.Grault);
@@ -606,7 +813,7 @@ namespace Tests
             var foo = fooSection.Create<HasInterfaceConstructorParameters>();
 
             Assert.IsType<HasConstructorParameters>(foo.Bar);
-            Assert.Equal(true, foo.Bar.Qux);
+            Assert.True(foo.Bar.Qux);
             Assert.Equal(123.45, foo.Bar.Garply);
             Assert.IsType<AlsoHasConstructorParameters>(foo.Baz);
             Assert.Equal(guid, foo.Baz.Grault);
@@ -627,7 +834,7 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasReadWriteConcreteProperties>();
 
-            Assert.Equal(false, foo.Bar.Qux);
+            Assert.False(foo.Bar.Qux);
             Assert.Equal(0D, foo.Bar.Garply);
             Assert.Equal(guid, foo.Baz.Grault);
         }
@@ -647,7 +854,7 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasConcreteConstructorParameters>();
 
-            Assert.Equal(true, foo.Bar.Qux);
+            Assert.True(foo.Bar.Qux);
             Assert.Equal(543.21, foo.Bar.Garply);
             Assert.Equal(guid, foo.Baz.Grault);
         }
@@ -668,7 +875,7 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasReadWriteConcreteProperties>();
 
-            Assert.Equal(false, foo.Bar.Qux);
+            Assert.False(foo.Bar.Qux);
             Assert.Equal(0D, foo.Bar.Garply);
             Assert.Equal(guid, foo.Baz.Grault);
         }
@@ -689,7 +896,7 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasConcreteConstructorParameters>();
 
-            Assert.Equal(true, foo.Bar.Qux);
+            Assert.True(foo.Bar.Qux);
             Assert.Equal(543.21, foo.Bar.Garply);
             Assert.Equal(guid, foo.Baz.Grault);
         }
@@ -710,7 +917,7 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasReadWriteConcreteProperties>();
 
-            Assert.Equal(false, foo.Bar.Qux);
+            Assert.False(foo.Bar.Qux);
             Assert.Equal(0D, foo.Bar.Garply);
             Assert.Equal(guid, foo.Baz.Grault);
         }
@@ -731,7 +938,7 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasConcreteConstructorParameters>();
 
-            Assert.Equal(true, foo.Bar.Qux);
+            Assert.True(foo.Bar.Qux);
             Assert.Equal(543.21, foo.Bar.Garply);
             Assert.Equal(guid, foo.Baz.Grault);
         }
@@ -804,15 +1011,15 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasSimpleReadWriteCollectionProperties>();
 
-            Assert.Equal(1, foo.Bar.Length);
+            Assert.Single(foo.Bar);
             Assert.Equal(123, foo.Bar[0]);
-            Assert.Equal(1, foo.Baz.Count);
+            Assert.Single(foo.Baz);
             Assert.Equal(123, foo.Baz[0]);
             Assert.Equal(1, foo.Qux.Count);
             Assert.Equal(123, foo.Qux[0]);
             Assert.Equal(1, foo.Garply.Count);
             Assert.Equal(123, foo.Garply.First());
-            Assert.Equal(1, foo.Grault.Count());
+            Assert.Single(foo.Grault);
             Assert.Equal(123, foo.Grault.First());
             Assert.Equal(1, foo.Fred.Count);
             Assert.Equal(123, foo.Fred.First());
@@ -864,7 +1071,7 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasSimpleReadonlyCollectionProperties>();
 
-            Assert.Equal(1, foo.Baz.Count);
+            Assert.Single(foo.Baz);
             Assert.Equal(123, foo.Baz[0]);
             Assert.Equal(1, foo.Qux.Count);
             Assert.Equal(123, foo.Qux[0]);
@@ -922,6 +1129,34 @@ namespace Tests
         }
 
         [Fact]
+        public void CanBindToByteCollectionConstructorParameters()
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    { "foo:bar", "QmFy" },
+                    { "foo:baz", "QmF6" },
+                    { "foo:qux", "UXV6" },
+                    { "foo:garply", "R2FycGx5" },
+                    { "foo:grault", "R3JhdWx0" },
+                    { "foo:fred", "RnJlZA==" },
+                    { "foo:waldo", "V2FsZG8=" },
+                })
+                .Build();
+
+            var fooSection = config.GetSection("foo");
+            var foo = fooSection.Create<HasByteCollectionConstructorParameters>();
+
+            Assert.Equal("QmFy", foo.Bar);
+            Assert.Equal("QmF6", foo.Baz);
+            Assert.Equal("UXV6", foo.Qux);
+            Assert.Equal("R2FycGx5", foo.Garply);
+            Assert.Equal("R3JhdWx0", foo.Grault);
+            Assert.Equal("RnJlZA==", foo.Fred);
+            Assert.Equal("V2FsZG8=", foo.Waldo);
+        }
+
+        [Fact]
         public void CanBindToSimpleCollectionConstructorParametersWithSingleNonListItem()
         {
             var config = new ConfigurationBuilder()
@@ -940,15 +1175,15 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasSimpleCollectionConstructorParameters>();
 
-            Assert.Equal(1, foo.Bar.Length);
+            Assert.Single(foo.Bar);
             Assert.Equal(123, foo.Bar[0]);
-            Assert.Equal(1, foo.Baz.Count);
+            Assert.Single(foo.Baz);
             Assert.Equal(123, foo.Baz[0]);
             Assert.Equal(1, foo.Qux.Count);
             Assert.Equal(123, foo.Qux[0]);
             Assert.Equal(1, foo.Garply.Count);
             Assert.Equal(123, foo.Garply.First());
-            Assert.Equal(1, foo.Grault.Count());
+            Assert.Single(foo.Grault);
             Assert.Equal(123, foo.Grault.First());
             Assert.Equal(1, foo.Fred.Count);
             Assert.Equal(123, foo.Fred.First());
@@ -1006,6 +1241,34 @@ namespace Tests
         }
 
         [Fact]
+        public void CanBindToByteCollectionProperties()
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    { "foo:bar", "QmFy" },
+                    { "foo:baz", "QmF6" },
+                    { "foo:qux", "UXV6" },
+                    { "foo:garply", "R2FycGx5" },
+                    { "foo:grault", "R3JhdWx0" },
+                    { "foo:fred", "RnJlZA==" },
+                    { "foo:waldo", "V2FsZG8=" },
+                })
+                .Build();
+
+            var fooSection = config.GetSection("foo");
+            var foo = fooSection.Create<HasByteCollectionProperties>();
+
+            Assert.Equal("QmFy", Convert.ToBase64String(foo.Bar));
+            Assert.Equal("QmF6", Convert.ToBase64String(foo.Baz.ToArray()));
+            Assert.Equal("UXV6", Convert.ToBase64String(foo.Qux.ToArray()));
+            Assert.Equal("R2FycGx5", Convert.ToBase64String(foo.Garply.ToArray()));
+            Assert.Equal("R3JhdWx0", Convert.ToBase64String(foo.Grault.ToArray()));
+            Assert.Equal("RnJlZA==", Convert.ToBase64String(foo.Fred.ToArray()));
+            Assert.Equal("V2FsZG8=", Convert.ToBase64String(foo.Waldo.ToArray()));
+        }
+
+        [Fact]
         public void CanBindToReadWriteConcreteCollectionPropertiesWithSingleNonListItem()
         {
             var config = new ConfigurationBuilder()
@@ -1024,15 +1287,15 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasConcreteReadWriteCollectionProperties>();
 
-            Assert.Equal(1, foo.Bar.Length);
+            Assert.Single(foo.Bar);
             Assert.Equal(Encoding.UTF8, foo.Bar[0].Baz);
-            Assert.Equal(1, foo.Baz.Count);
+            Assert.Single(foo.Baz);
             Assert.Equal(Encoding.UTF8, foo.Baz[0].Baz);
             Assert.Equal(1, foo.Qux.Count);
             Assert.Equal(Encoding.UTF8, foo.Qux[0].Baz);
             Assert.Equal(1, foo.Garply.Count);
             Assert.Equal(Encoding.UTF8, foo.Garply.First().Baz);
-            Assert.Equal(1, foo.Grault.Count());
+            Assert.Single(foo.Grault);
             Assert.Equal(Encoding.UTF8, foo.Grault.First().Baz);
             Assert.Equal(1, foo.Fred.Count);
             Assert.Equal(Encoding.UTF8, foo.Fred.First().Baz);
@@ -1070,6 +1333,112 @@ namespace Tests
         }
 
         [Fact]
+        public void CanBindToNonGenericListProperties()
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    { "foo:bar:0:baz", "utf-8" },
+                    { "foo:bar:1:baz", "ascii" },
+                    { "foo:baz:0:baz", "utf-8" },
+                    { "foo:baz:1:baz", "ascii" },
+                    { "foo:qux:0:baz", "utf-8" },
+                    { "foo:qux:1:baz", "ascii" },
+                })
+                .Build();
+
+            var fooSection = config.GetSection("foo");
+            var foo = fooSection.Create<HasNonGenericCollectionProperties>();
+
+            Assert.Equal(2, foo.Bar.Count);
+            Assert.Equal(Encoding.UTF8, foo.Bar[0].Baz);
+            Assert.Equal(Encoding.ASCII, foo.Bar[1].Baz);
+            Assert.Equal(2, foo.Baz.Count);
+            Assert.Equal(Encoding.UTF8, foo.Baz[0].Baz);
+            Assert.Equal(Encoding.ASCII, foo.Baz[1].Baz);
+            Assert.Equal(2, foo.Qux.Count);
+            Assert.Equal(Encoding.UTF8, foo.Qux[0].Baz);
+            Assert.Equal(Encoding.ASCII, foo.Qux[1].Baz);
+        }
+
+        [Fact]
+        public void ReadonlyListPropertiesAreClearedBeforeAddingToThem()
+        {
+            // Verify that the object starts out with initial items.
+            var defaultFoo = new HasReadonlyListPropertiesWithInitialItems();
+
+            Assert.Single(defaultFoo.Bar);
+            Assert.Equal(Encoding.ASCII, defaultFoo.Bar[0].Baz);
+            Assert.Single(defaultFoo.Baz);
+            Assert.Equal(Encoding.ASCII, defaultFoo.Baz[0].Baz);
+
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    { "foo:bar:0:baz", "utf-8" },
+                    { "foo:bar:1:baz", "utf-32" },
+                    { "foo:baz:0:baz", "utf-8" },
+                    { "foo:baz:1:baz", "utf-32" },
+                })
+                .Build();
+
+            var fooSection = config.GetSection("foo");
+            var foo = fooSection.Create<HasReadonlyListPropertiesWithInitialItems>();
+
+            Assert.Equal(2, foo.Bar.Count);
+            Assert.Equal(Encoding.UTF8, foo.Bar[0].Baz);
+            Assert.Equal(Encoding.UTF32, foo.Bar[1].Baz);
+            Assert.Equal(2, foo.Baz.Count);
+            Assert.Equal(Encoding.UTF8, foo.Baz[0].Baz);
+            Assert.Equal(Encoding.UTF32, foo.Baz[1].Baz);
+        }
+
+        [Fact]
+        public void CanMapReadOnlyPropertiesOfTypeNonGenericIListImplementationWithoutDefaultConstructor()
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    { "name", "source1" },
+                    { "listeners:0:name", "listener1" },
+                    { "listeners:1:name", "listener2" },
+                })
+                .Build();
+
+            // The TraceSource.Listeners property is readonly, and the TraceListenerCollection class
+            // does not have a default constructor, so this is a good example class to use for testing.
+
+            var defaultTypes = new DefaultTypes { { typeof(TraceListener), typeof(DefaultTraceListener) } };
+
+            var traceSource = config.Create<TraceSource>(defaultTypes);
+
+            Assert.Equal("source1", traceSource.Name);
+            Assert.Equal(2, traceSource.Listeners.Count);
+            Assert.Equal("listener1", traceSource.Listeners[0].Name);
+            Assert.Equal("listener2", traceSource.Listeners[1].Name);
+        }
+
+        [Fact]
+        public void FlagsEnumsSupportCSharpAndVisualBasicEnumDelimiters()
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    { "foo:bar", "Garply, Grault, Corge" },
+                    { "foo:baz", "Garply | Grault | Corge" },
+                    { "foo:qux", "Garply Or Grault Or Corge" },
+                })
+                .Build();
+
+            var fooSection = config.GetSection("foo");
+            var foo = fooSection.Create<HasFlagsEnumProperties>();
+
+            Assert.Equal(Flags.Garply | Flags.Grault | Flags.Corge, foo.Bar);
+            Assert.Equal(Flags.Garply | Flags.Grault | Flags.Corge, foo.Baz);
+            Assert.Equal(Flags.Garply | Flags.Grault | Flags.Corge, foo.Qux);
+        }
+
+        [Fact]
         public void CanBindToReadonlyConcreteCollectionPropertiesWithSingleNonListItem()
         {
             var config = new ConfigurationBuilder()
@@ -1084,7 +1453,7 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasConcreteReadonlyCollectionProperties>();
 
-            Assert.Equal(1, foo.Baz.Count);
+            Assert.Single(foo.Baz);
             Assert.Equal(Encoding.UTF8, foo.Baz[0].Baz);
             Assert.Equal(1, foo.Qux.Count);
             Assert.Equal(Encoding.UTF8, foo.Qux[0].Baz);
@@ -1160,15 +1529,15 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasConcreteCollectionConstructorParameters>();
 
-            Assert.Equal(1, foo.Bar.Length);
+            Assert.Single(foo.Bar);
             Assert.Equal(Encoding.UTF8, foo.Bar[0].Baz);
-            Assert.Equal(1, foo.Baz.Count);
+            Assert.Single(foo.Baz);
             Assert.Equal(Encoding.UTF8, foo.Baz[0].Baz);
             Assert.Equal(1, foo.Qux.Count);
             Assert.Equal(Encoding.UTF8, foo.Qux[0].Baz);
             Assert.Equal(1, foo.Garply.Count);
             Assert.Equal(Encoding.UTF8, foo.Garply.First().Baz);
-            Assert.Equal(1, foo.Grault.Count());
+            Assert.Single(foo.Grault);
             Assert.Equal(Encoding.UTF8, foo.Grault.First().Baz);
             Assert.Equal(1, foo.Fred.Count);
             Assert.Equal(Encoding.UTF8, foo.Fred.First().Baz);
@@ -1322,12 +1691,12 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasInterfaceReadWriteCollectionProperties>();
 
-            Assert.Equal(1, foo.Bar.Length);
+            Assert.Single(foo.Bar);
             Assert.Equal(Encoding.UTF8, foo.Bar[0].Baz);
             Assert.IsType<DerivedHasSomething>(foo.Bar[0]);
             Assert.Equal(quxValue, ((DerivedHasSomething)foo.Bar[0]).Qux);
 
-            Assert.Equal(1, foo.Baz.Count);
+            Assert.Single(foo.Baz);
             Assert.Equal(Encoding.UTF8, foo.Baz[0].Baz);
             Assert.IsType<DerivedHasSomething>(foo.Baz[0]);
             Assert.Equal(quxValue, ((DerivedHasSomething)foo.Baz[0]).Qux);
@@ -1342,7 +1711,7 @@ namespace Tests
             Assert.IsType<DerivedHasSomething>(foo.Garply.First());
             Assert.Equal(quxValue, ((DerivedHasSomething)foo.Garply.First()).Qux);
 
-            Assert.Equal(1, foo.Grault.Count());
+            Assert.Single(foo.Grault);
             Assert.Equal(Encoding.UTF8, foo.Grault.First().Baz);
             Assert.IsType<DerivedHasSomething>(foo.Grault.First());
             Assert.Equal(quxValue, ((DerivedHasSomething)foo.Grault.First()).Qux);
@@ -1436,7 +1805,7 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasInterfaceReadonlyCollectionProperties>();
 
-            Assert.Equal(1, foo.Baz.Count);
+            Assert.Single(foo.Baz);
             Assert.Equal(Encoding.UTF8, foo.Baz[0].Baz);
             Assert.IsType<DerivedHasSomething>(foo.Baz[0]);
             Assert.Equal(quxValue, ((DerivedHasSomething)foo.Baz[0]).Qux);
@@ -1598,12 +1967,12 @@ namespace Tests
             var fooSection = config.GetSection("foo");
             var foo = fooSection.Create<HasInterfaceCollectionConstructorParameters>();
 
-            Assert.Equal(1, foo.Bar.Length);
+            Assert.Single(foo.Bar);
             Assert.Equal(Encoding.UTF8, foo.Bar[0].Baz);
             Assert.IsType<DerivedHasSomething>(foo.Bar[0]);
             Assert.Equal(quxValue, ((DerivedHasSomething)foo.Bar[0]).Qux);
 
-            Assert.Equal(1, foo.Baz.Count);
+            Assert.Single(foo.Baz);
             Assert.Equal(Encoding.UTF8, foo.Baz[0].Baz);
             Assert.IsType<DerivedHasSomething>(foo.Baz[0]);
             Assert.Equal(quxValue, ((DerivedHasSomething)foo.Baz[0]).Qux);
@@ -1618,7 +1987,7 @@ namespace Tests
             Assert.IsType<DerivedHasSomething>(foo.Garply.First());
             Assert.Equal(quxValue, ((DerivedHasSomething)foo.Garply.First()).Qux);
 
-            Assert.Equal(1, foo.Grault.Count());
+            Assert.Single(foo.Grault);
             Assert.Equal(Encoding.UTF8, foo.Grault.First().Baz);
             Assert.IsType<DerivedHasSomething>(foo.Grault.First());
             Assert.Equal(quxValue, ((DerivedHasSomething)foo.Grault.First()).Qux);
@@ -1644,6 +2013,8 @@ namespace Tests
                     { "foo:bar:waldo", "456" },
                     { "foo:baz:fred", "123" },
                     { "foo:baz:waldo", "456" },
+                    { "foo:qux:fred", "123" },
+                    { "foo:qux:waldo", "456" },
                 })
                 .Build();
 
@@ -1656,6 +2027,9 @@ namespace Tests
             Assert.Equal(2, foo.Baz.Count);
             Assert.Equal(123, foo.Baz["fred"]);
             Assert.Equal(456, foo.Baz["waldo"]);
+            Assert.Equal(2, foo.Qux.Count);
+            Assert.Equal(123, foo.Qux["fred"]);
+            Assert.Equal(456, foo.Qux["waldo"]);
         }
 
         [Fact]
@@ -1692,6 +2066,8 @@ namespace Tests
                     { "foo:bar:waldo", "456" },
                     { "foo:baz:fred", "123" },
                     { "foo:baz:waldo", "456" },
+                    { "foo:qux:fred", "123" },
+                    { "foo:qux:waldo", "456" },
                 })
                 .Build();
 
@@ -1704,6 +2080,9 @@ namespace Tests
             Assert.Equal(2, foo.Baz.Count);
             Assert.Equal(123, foo.Baz["fred"]);
             Assert.Equal(456, foo.Baz["waldo"]);
+            Assert.Equal(2, foo.Qux.Count);
+            Assert.Equal(123, foo.Qux["fred"]);
+            Assert.Equal(456, foo.Qux["waldo"]);
         }
 
         [Fact]
@@ -1716,6 +2095,8 @@ namespace Tests
                     { "foo:bar:waldo:baz", "ascii" },
                     { "foo:baz:fred:baz", "utf-8" },
                     { "foo:baz:waldo:baz", "ascii" },
+                    { "foo:qux:fred:baz", "utf-8" },
+                    { "foo:qux:waldo:baz", "ascii" },
                 })
                 .Build();
 
@@ -1728,6 +2109,9 @@ namespace Tests
             Assert.Equal(2, foo.Baz.Count);
             Assert.Equal(Encoding.UTF8, foo.Baz["fred"].Baz);
             Assert.Equal(Encoding.ASCII, foo.Baz["waldo"].Baz);
+            Assert.Equal(2, foo.Qux.Count);
+            Assert.Equal(Encoding.UTF8, foo.Qux["fred"].Baz);
+            Assert.Equal(Encoding.ASCII, foo.Qux["waldo"].Baz);
         }
 
         [Fact]
@@ -1764,6 +2148,8 @@ namespace Tests
                     { "foo:bar:waldo:baz", "ascii" },
                     { "foo:baz:fred:baz", "utf-8" },
                     { "foo:baz:waldo:baz", "ascii" },
+                    { "foo:qux:fred:baz", "utf-8" },
+                    { "foo:qux:waldo:baz", "ascii" },
                 })
                 .Build();
 
@@ -1776,6 +2162,9 @@ namespace Tests
             Assert.Equal(2, foo.Baz.Count);
             Assert.Equal(Encoding.UTF8, foo.Baz["fred"].Baz);
             Assert.Equal(Encoding.ASCII, foo.Baz["waldo"].Baz);
+            Assert.Equal(2, foo.Qux.Count);
+            Assert.Equal(Encoding.UTF8, foo.Qux["fred"].Baz);
+            Assert.Equal(Encoding.ASCII, foo.Qux["waldo"].Baz);
         }
 
         [Fact]
@@ -1797,6 +2186,12 @@ namespace Tests
                     { "foo:baz:fred:value:qux", quxValue.ToString() },
                     { "foo:baz:waldo:type", typeof(HasSomething).AssemblyQualifiedName },
                     { "foo:baz:waldo:value:baz", "ascii" },
+
+                    { "foo:qux:fred:type", typeof(DerivedHasSomething).AssemblyQualifiedName },
+                    { "foo:qux:fred:value:baz", "utf-8" },
+                    { "foo:qux:fred:value:qux", quxValue.ToString() },
+                    { "foo:qux:waldo:type", typeof(HasSomething).AssemblyQualifiedName },
+                    { "foo:qux:waldo:value:baz", "ascii" },
                 })
                 .Build();
 
@@ -1816,6 +2211,13 @@ namespace Tests
             Assert.Equal(quxValue, ((DerivedHasSomething)foo.Baz["fred"]).Qux);
             Assert.Equal(Encoding.ASCII, foo.Baz["waldo"].Baz);
             Assert.IsType<HasSomething>(foo.Baz["waldo"]);
+
+            Assert.Equal(2, foo.Qux.Count);
+            Assert.Equal(Encoding.UTF8, foo.Qux["fred"].Baz);
+            Assert.IsType<DerivedHasSomething>(foo.Qux["fred"]);
+            Assert.Equal(quxValue, ((DerivedHasSomething)foo.Qux["fred"]).Qux);
+            Assert.Equal(Encoding.ASCII, foo.Qux["waldo"].Baz);
+            Assert.IsType<HasSomething>(foo.Qux["waldo"]);
         }
 
         [Fact]
@@ -1877,6 +2279,12 @@ namespace Tests
                     { "foo:baz:fred:value:qux", quxValue.ToString() },
                     { "foo:baz:waldo:type", typeof(HasSomething).AssemblyQualifiedName },
                     { "foo:baz:waldo:value:baz", "ascii" },
+
+                    { "foo:qux:fred:type", typeof(DerivedHasSomething).AssemblyQualifiedName },
+                    { "foo:qux:fred:value:baz", "utf-8" },
+                    { "foo:qux:fred:value:qux", quxValue.ToString() },
+                    { "foo:qux:waldo:type", typeof(HasSomething).AssemblyQualifiedName },
+                    { "foo:qux:waldo:value:baz", "ascii" },
                 })
                 .Build();
 
@@ -1896,6 +2304,219 @@ namespace Tests
             Assert.Equal(quxValue, ((DerivedHasSomething)foo.Baz["fred"]).Qux);
             Assert.Equal(Encoding.ASCII, foo.Baz["waldo"].Baz);
             Assert.IsType<HasSomething>(foo.Baz["waldo"]);
+
+            Assert.Equal(2, foo.Qux.Count);
+            Assert.Equal(Encoding.UTF8, foo.Qux["fred"].Baz);
+            Assert.IsType<DerivedHasSomething>(foo.Qux["fred"]);
+            Assert.Equal(quxValue, ((DerivedHasSomething)foo.Qux["fred"]).Qux);
+            Assert.Equal(Encoding.ASCII, foo.Qux["waldo"].Baz);
+            Assert.IsType<HasSomething>(foo.Qux["waldo"]);
+        }
+
+        [Fact]
+        public void UsesDefaultTypeAttributeForTopLevelType()
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    { "fred", "123.45" },
+                })
+                .Build();
+
+            var instance = config.Create<IHasDefaultType>();
+
+            Assert.IsType<DefaultHasDefaultType>(instance);
+            Assert.Equal(123.45, ((DefaultHasDefaultType)instance).Fred);
+        }
+
+        [Fact]
+        public void UsesDefaultTypesObjectForTopLevelType()
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    { "waldo", "123.45" },
+                })
+                .Build();
+
+            var defaults = new DefaultTypes().Add(typeof(IHasNoDefaultType), typeof(DefaultHasNoDefaultType));
+
+            var instance = config.Create<IHasNoDefaultType>(defaults);
+
+            Assert.IsType<DefaultHasNoDefaultType>(instance);
+            Assert.Equal(123.45, ((DefaultHasNoDefaultType)instance).Waldo);
+        }
+
+        [Fact]
+        public void UsesConvertMethodAttributeForTopLevelType()
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    { "fred", "123.45" },
+                })
+                .Build();
+
+            var instance = config.GetSection("fred").Create<HasConvertMethod>();
+
+            Assert.Equal(123.45, instance.Fred);
+        }
+
+        [Fact]
+        public void UsesValueConvertersObjectForTopLevelType()
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    { "waldo", "123.45" },
+                })
+                .Build();
+
+            var valueConverters = new ValueConverters().Add(typeof(HasNoConvertMethod), value => new HasNoConvertMethod { Waldo = double.Parse(value) });
+
+            var instance = config.GetSection("waldo").Create<HasNoConvertMethod>(valueConverters: valueConverters);
+
+            Assert.Equal(123.45, instance.Waldo);
+        }
+
+        [Fact]
+        public void ObjectFieldWithDefaultTypeOfStringDictionaryIsSupported()
+        {
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string>
+            {
+                ["foo:bar:a"] = "abc",
+                ["foo:bar:b"] = "xyz",
+                ["foo:baz:c"] = "123",
+                ["foo:baz:d"] = "456"
+            }).Build();
+
+            var defaultTypes = new DefaultTypes()
+                .Add(typeof(HasObjectMembersWithDefaultTypeOfStringDictionary),
+                    nameof(HasObjectMembersWithDefaultTypeOfStringDictionary.Baz),
+                    typeof(Dictionary<string, int>));
+
+            var foo = config.GetSection("foo").Create<HasObjectMembersWithDefaultTypeOfStringDictionary>(defaultTypes);
+
+            var bar = (Dictionary<string, string>)foo.Bar;
+            var baz = (Dictionary<string, int>)foo.Baz;
+
+            Assert.Equal("abc", bar["a"]);
+            Assert.Equal("xyz", bar["b"]);
+            Assert.Equal(123, baz["c"]);
+            Assert.Equal(456, baz["d"]);
+        }
+
+        [Fact]
+        public void ObjectFieldsWithDirectConfigurationValuesAreSupported()
+        {
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string>
+            {
+                ["foo:bar"] = "abc",
+                ["foo:baz:a"] = "123",
+                ["foo:baz:b"] = "xyz"
+            }).Build();
+
+            var foo = config.GetSection("foo").Create<HasObjectMembers>();
+
+            Assert.Equal("abc", foo.Bar);
+            Assert.Equal("123", foo.Baz["a"]);
+            Assert.Equal("xyz", foo.Baz["b"]);
+        }
+
+        [Theory]
+        [InlineData(typeof(HasMembersDecoratedWithSingleAlternateNameAttribute), "foo")]
+        [InlineData(typeof(HasMembersDecoratedWithSingleAlternateNameAttribute), "foo1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleAlternateNameAttributes), "foo")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleAlternateNameAttributes), "foo1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleAlternateNameAttributes), "foo2")]
+        [InlineData(typeof(HasMembersDecoratedWithSingleLocallyDefinedAlternateNameAttribute), "foo")]
+        [InlineData(typeof(HasMembersDecoratedWithSingleLocallyDefinedAlternateNameAttribute), "foo1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleLocallyDefinedAlternateNameAttributes), "foo")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleLocallyDefinedAlternateNameAttributes), "foo1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleLocallyDefinedAlternateNameAttributes), "foo2")]
+        public void ConstructorsUseAlternateNameAttribute(Type type, string configurationKey)
+        {
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string>
+            {
+                [configurationKey] = "abc"
+            }).Build();
+
+            var item = (IHasMembers)config.Create(type);
+
+            Assert.Equal("abc", item.Foo);
+        }
+
+        [Theory]
+        [InlineData(typeof(HasMembersDecoratedWithSingleAlternateNameAttribute), "bar")]
+        [InlineData(typeof(HasMembersDecoratedWithSingleAlternateNameAttribute), "bar1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleAlternateNameAttributes), "bar")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleAlternateNameAttributes), "bar1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleAlternateNameAttributes), "bar2")]
+        [InlineData(typeof(HasMembersDecoratedWithSingleLocallyDefinedAlternateNameAttribute), "bar")]
+        [InlineData(typeof(HasMembersDecoratedWithSingleLocallyDefinedAlternateNameAttribute), "bar1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleLocallyDefinedAlternateNameAttributes), "bar")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleLocallyDefinedAlternateNameAttributes), "bar1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleLocallyDefinedAlternateNameAttributes), "bar2")]
+        public void ReadWritePropertiesUseAlternateNameAttribute(Type type, string configurationKey)
+        {
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string>
+            {
+                [configurationKey] = "abc"
+            }).Build();
+
+            var item = (IHasMembers)config.Create(type);
+
+            Assert.Equal("abc", item.Bar);
+        }
+
+        [Theory]
+        [InlineData(typeof(HasMembersDecoratedWithSingleAlternateNameAttribute), "baz")]
+        [InlineData(typeof(HasMembersDecoratedWithSingleAlternateNameAttribute), "baz1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleAlternateNameAttributes), "baz")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleAlternateNameAttributes), "baz1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleAlternateNameAttributes), "baz2")]
+        [InlineData(typeof(HasMembersDecoratedWithSingleLocallyDefinedAlternateNameAttribute), "baz")]
+        [InlineData(typeof(HasMembersDecoratedWithSingleLocallyDefinedAlternateNameAttribute), "baz1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleLocallyDefinedAlternateNameAttributes), "baz")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleLocallyDefinedAlternateNameAttributes), "baz1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleLocallyDefinedAlternateNameAttributes), "baz2")]
+        public void ReadonlyListPropertiesUseAlternateNameAttribute(Type type, string configurationKey)
+        {
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string>
+            {
+                [configurationKey] = "abc"
+            }).Build();
+
+            var item = (IHasMembers)config.Create(type);
+
+            Assert.Single(item.Baz);
+            Assert.Equal("abc", item.Baz[0]);
+        }
+
+        [Theory]
+        [InlineData(typeof(HasMembersDecoratedWithSingleAlternateNameAttribute), "qux")]
+        [InlineData(typeof(HasMembersDecoratedWithSingleAlternateNameAttribute), "qux1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleAlternateNameAttributes), "qux")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleAlternateNameAttributes), "qux1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleAlternateNameAttributes), "qux2")]
+        [InlineData(typeof(HasMembersDecoratedWithSingleLocallyDefinedAlternateNameAttribute), "qux")]
+        [InlineData(typeof(HasMembersDecoratedWithSingleLocallyDefinedAlternateNameAttribute), "qux1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleLocallyDefinedAlternateNameAttributes), "qux")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleLocallyDefinedAlternateNameAttributes), "qux1")]
+        [InlineData(typeof(HasMembersDecoratedWithMultipleLocallyDefinedAlternateNameAttributes), "qux2")]
+        public void ReadonlyDictionaryPropertiesUseAlternateNameAttribute(Type type, string configurationKey)
+        {
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string>
+            {
+                [$"{configurationKey}:garply"] = "abc"
+            }).Build();
+
+            var item = (IHasMembers)config.Create(type);
+
+            Assert.Single(item.Qux);
+            var dictionaryItem = item.Qux.Single();
+            Assert.Equal("garply", dictionaryItem.Key);
+            Assert.Equal("abc", dictionaryItem.Value);
         }
     }
 
@@ -1903,6 +2524,7 @@ namespace Tests
     {
         public Dictionary<string, int> Bar { get; set; }
         public IDictionary<string, int> Baz { get; set; }
+        public IReadOnlyDictionary<string, int> Qux { get; set; }
     }
 
     public class HasSimpleReadonlyDictionaryProperties
@@ -1913,20 +2535,23 @@ namespace Tests
 
     public class HasSimpleDictionaryConstructorParameters
     {
-        public HasSimpleDictionaryConstructorParameters(Dictionary<string, int> bar, IDictionary<string, int> baz)
+        public HasSimpleDictionaryConstructorParameters(Dictionary<string, int> bar, IDictionary<string, int> baz, IReadOnlyDictionary<string, int> qux)
         {
             Bar = bar;
             Baz = baz;
+            Qux = qux;
         }
 
         public Dictionary<string, int> Bar { get; }
         public IDictionary<string, int> Baz { get; }
+        public IReadOnlyDictionary<string, int> Qux { get; }
     }
 
     public class HasConcreteReadWriteDictionaryProperties
     {
         public Dictionary<string, HasSomething> Bar { get; set; }
         public IDictionary<string, HasSomething> Baz { get; set; }
+        public IReadOnlyDictionary<string, HasSomething> Qux { get; set; }
     }
 
     public class HasConcreteReadonlyDictionaryProperties
@@ -1937,20 +2562,23 @@ namespace Tests
 
     public class HasConcreteDictionaryParameters
     {
-        public HasConcreteDictionaryParameters(Dictionary<string, HasSomething> bar, IDictionary<string, HasSomething> baz)
+        public HasConcreteDictionaryParameters(Dictionary<string, HasSomething> bar, IDictionary<string, HasSomething> baz, IReadOnlyDictionary<string, HasSomething> qux)
         {
             Bar = bar;
             Baz = baz;
+            Qux = qux;
         }
 
         public Dictionary<string, HasSomething> Bar { get; }
         public IDictionary<string, HasSomething> Baz { get; }
+        public IReadOnlyDictionary<string, HasSomething> Qux { get; }
     }
 
     public class HasInterfaceReadWriteDictionaryProperties
     {
         public Dictionary<string, IHasSomething> Bar { get; set; }
         public IDictionary<string, IHasSomething> Baz { get; set; }
+        public IReadOnlyDictionary<string, IHasSomething> Qux { get; set; }
     }
 
     public class HasInterfaceReadonlyDictionaryProperties
@@ -1961,14 +2589,16 @@ namespace Tests
 
     public class HasInterfaceDictionaryParameters
     {
-        public HasInterfaceDictionaryParameters(Dictionary<string, IHasSomething> bar, IDictionary<string, IHasSomething> baz)
+        public HasInterfaceDictionaryParameters(Dictionary<string, IHasSomething> bar, IDictionary<string, IHasSomething> baz, IReadOnlyDictionary<string, IHasSomething> qux)
         {
             Bar = bar;
             Baz = baz;
+            Qux = qux;
         }
 
         public Dictionary<string, IHasSomething> Bar { get; }
         public IDictionary<string, IHasSomething> Baz { get; }
+        public IReadOnlyDictionary<string, IHasSomething> Qux { get; }
     }
 
     public class HasSimpleReadWriteCollectionProperties
@@ -2017,6 +2647,34 @@ namespace Tests
         public IReadOnlyList<int> Waldo { get; }
     }
 
+    public class HasByteCollectionConstructorParameters
+    {
+        public HasByteCollectionConstructorParameters(
+            byte[] bar,
+            List<byte> baz,
+            IList<byte> qux,
+            ICollection<byte> garply,
+            IEnumerable<byte> grault,
+            IReadOnlyCollection<byte> fred,
+            IReadOnlyList<byte> waldo)
+        {
+            Bar = Convert.ToBase64String(bar);
+            Baz = Convert.ToBase64String(baz.ToArray());
+            Qux = Convert.ToBase64String(qux.ToArray());
+            Garply = Convert.ToBase64String(garply.ToArray());
+            Grault = Convert.ToBase64String(grault.ToArray());
+            Fred = Convert.ToBase64String(fred.ToArray());
+            Waldo = Convert.ToBase64String(waldo.ToArray());
+        }
+        public string Bar { get; }
+        public string Baz { get; }
+        public string Qux { get; }
+        public string Garply { get; }
+        public string Grault { get; }
+        public string Fred { get; }
+        public string Waldo { get; }
+    }
+
     public class HasConcreteReadWriteCollectionProperties
     {
         public HasSomething[] Bar { get; set; }
@@ -2028,11 +2686,144 @@ namespace Tests
         public IReadOnlyList<HasSomething> Waldo { get; set; }
     }
 
+    public class HasByteCollectionProperties
+    {
+        public byte[] Bar { get; set; }
+        public List<byte> Baz { get; set; }
+        public IList<byte> Qux { get; set; }
+        public ICollection<byte> Garply { get; set; }
+        public IEnumerable<byte> Grault { get; set; }
+        public IReadOnlyCollection<byte> Fred { get; set; }
+        public IReadOnlyList<byte> Waldo { get; set; }
+    }
+
     public class HasConcreteReadonlyCollectionProperties
     {
         public List<HasSomething> Baz { get; } = new List<HasSomething>();
         public IList<HasSomething> Qux { get; } = new List<HasSomething>();
         public ICollection<HasSomething> Garply { get; } = new List<HasSomething>();
+    }
+
+    public class HasNonGenericCollectionProperties
+    {
+        public HasNonGenericCollectionProperties(HasSomethingCollection baz)
+        {
+            Baz = baz;
+        }
+
+        public HasSomethingCollection Bar { get; set; }
+        public HasSomethingCollection Baz { get; }
+        public HasSomethingCollection Qux { get; } = new HasSomethingCollection();
+    }
+
+    public class HasReadonlyListPropertiesWithInitialItems
+    {
+        public List<HasSomething> Bar { get; } = new List<HasSomething>() { new HasSomething { Baz = Encoding.ASCII } };
+        public HasSomethingCollection Baz { get; } = new HasSomethingCollection() { new HasSomething { Baz = Encoding.ASCII } };
+    }
+
+    public class HasFlagsEnumProperties
+    {
+        public Flags Bar { get; set; }
+        public Flags Baz { get; set; }
+        public Flags Qux { get; set; }
+    }
+
+    [Flags]
+    public enum Flags
+    {
+        Garply = 1,
+        Grault = 2,
+        Corge = 4
+    }
+
+    public class HasSomethingCollection : IList
+    {
+        private readonly List<HasSomething> _list = new List<HasSomething>();
+
+        object IList.this[int index] { get => this[index]; set => this[index] = (HasSomething)value; }
+
+        public HasSomething this[int index] { get => _list[index]; set => _list[index] = value; }
+
+        bool IList.IsFixedSize => ((IList)_list).IsFixedSize;
+
+        bool IList.IsReadOnly => ((IList)_list).IsReadOnly;
+
+        public int Count => _list.Count;
+
+        bool ICollection.IsSynchronized => ((IList)_list).IsSynchronized;
+
+        object ICollection.SyncRoot => ((IList)_list).SyncRoot;
+
+        int IList.Add(object value)
+        {
+            return Add((HasSomething)value);
+        }
+
+        public int Add(HasSomething value)
+        {
+            return ((IList)_list).Add(value);
+        }
+
+        public void Clear()
+        {
+            _list.Clear();
+        }
+
+        bool IList.Contains(object value)
+        {
+            return Contains((HasSomething)value);
+        }
+
+        public bool Contains(HasSomething value)
+        {
+            return _list.Contains(value);
+        }
+
+        void ICollection.CopyTo(Array array, int index)
+        {
+            ((IList)_list).CopyTo(array, index);
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return ((IList)_list).GetEnumerator();
+        }
+
+        int IList.IndexOf(object value)
+        {
+            return IndexOf((HasSomething)value);
+        }
+
+        public int IndexOf(HasSomething value)
+        {
+            return _list.IndexOf(value);
+        }
+
+        void IList.Insert(int index, object value)
+        {
+            Insert(index, (HasSomething)value);
+        }
+
+        public void Insert(int index, HasSomething value)
+        {
+            _list.Insert(index, value);
+        }
+
+        void IList.Remove(object value)
+        {
+            Remove((HasSomething)value);
+        }
+
+        public void Remove(HasSomething value)
+        {
+            _list.Remove(value);
+        }
+
+        public void RemoveAt(int index)
+        {
+            _list.RemoveAt(index);
+        }
     }
 
     public class HasConcreteCollectionConstructorParameters
@@ -2128,7 +2919,7 @@ namespace Tests
     {
         public int Bar { get; set; }
         public DateTime Baz { get; set; }
-        public bool Qux { get; set; }
+        public Type Qux { get; set; }
     }
 
     public class HasSimpleConstructorParameters
@@ -2340,6 +3131,22 @@ namespace Tests
         public double Waldo { get; set; }
     }
 
+    [ConvertMethod(nameof(Convert))]
+    public class HasConvertMethod
+    {
+        public double Fred { get; set; }
+
+        private static HasConvertMethod Convert(string value)
+        {
+            return new HasConvertMethod { Fred = double.Parse(value) };
+        }
+    }
+
+    public class HasNoConvertMethod
+    {
+        public double Waldo { get; set; }
+    }
+
     public interface IAlsoHasNoDefaultType
     {
     }
@@ -2453,6 +3260,75 @@ namespace Tests
         private static double ConvertBar(string value) => double.Parse(value) * 7;
         private static double ConvertBaz(string value) => double.Parse(value) * 11;
     }
+
+    public interface IHasMembers
+    {
+        string Foo { get; }
+        string Bar { get; }
+        List<string> Baz { get; }
+        Dictionary<string, string> Qux { get; }
+    }
+
+    public class HasMembersDecoratedWithSingleAlternateNameAttribute : IHasMembers
+    {
+        public HasMembersDecoratedWithSingleAlternateNameAttribute([AlternateName("foo1")] string foo = null) => Foo = foo;
+        public string Foo { get; }
+        [AlternateName("bar1")] public string Bar { get; set; }
+        [AlternateName("baz1")] public List<string> Baz { get; } = new List<string>();
+        [AlternateName("qux1")] public Dictionary<string, string> Qux { get; } = new Dictionary<string, string>();
+    }
+
+    public class HasMembersDecoratedWithSingleLocallyDefinedAlternateNameAttribute : IHasMembers
+    {
+        public HasMembersDecoratedWithSingleLocallyDefinedAlternateNameAttribute([LocallyDefined.AlternateName("foo1")] string foo = null) => Foo = foo;
+        public string Foo { get; }
+        [LocallyDefined.AlternateName("bar1")] public string Bar { get; set; }
+        [LocallyDefined.AlternateName("baz1")] public List<string> Baz { get; } = new List<string>();
+        [LocallyDefined.AlternateName("qux1")] public Dictionary<string, string> Qux { get; } = new Dictionary<string, string>();
+    }
+
+    public class HasMembersDecoratedWithMultipleAlternateNameAttributes : IHasMembers
+    {
+        public HasMembersDecoratedWithMultipleAlternateNameAttributes([AlternateName("foo1"), AlternateName("foo2")] string foo = null) => Foo = foo;
+        public string Foo { get; }
+        [AlternateName("bar1"), AlternateName("bar2")] public string Bar { get; set; }
+        [AlternateName("baz1"), AlternateName("baz2")] public List<string> Baz { get; } = new List<string>();
+        [AlternateName("qux1"), AlternateName("qux2")] public Dictionary<string, string> Qux { get; } = new Dictionary<string, string>();
+    }
+
+    public class HasMembersDecoratedWithMultipleLocallyDefinedAlternateNameAttributes : IHasMembers
+    {
+        public HasMembersDecoratedWithMultipleLocallyDefinedAlternateNameAttributes([LocallyDefined.AlternateName("foo1"), LocallyDefined.AlternateName("foo2")] string foo = null) => Foo = foo;
+        public string Foo { get; }
+        [LocallyDefined.AlternateName("bar1"), LocallyDefined.AlternateName("bar2")] public string Bar { get; set; }
+        [LocallyDefined.AlternateName("baz1"), LocallyDefined.AlternateName("baz2")] public List<string> Baz { get; } = new List<string>();
+        [LocallyDefined.AlternateName("qux1"), LocallyDefined.AlternateName("qux2")] public Dictionary<string, string> Qux { get; } = new Dictionary<string, string>();
+    }
+
+    public class HasObjectMembersWithDefaultTypeOfStringDictionary
+    {
+        public HasObjectMembersWithDefaultTypeOfStringDictionary([DefaultType(typeof(Dictionary<string, string>))] object bar,
+            object baz)
+        {
+            Bar = bar;
+            Baz = baz;
+        }
+
+        public object Bar { get; }
+        public object Baz { get; }
+    }
+
+    public class HasObjectMembers
+    {
+        public HasObjectMembers(object bar, Dictionary<string, object> baz)
+        {
+            Bar = bar;
+            Baz = baz;
+        }
+
+        public object Bar { get; }
+        public Dictionary<string, object> Baz { get; }
+    }
 }
 
 namespace LocallyDefined
@@ -2467,5 +3343,12 @@ namespace LocallyDefined
     {
         public ConvertMethodAttribute(string convertMethodName) => ConvertMethodName = convertMethodName;
         public string ConvertMethodName { get; }
+    }
+
+    [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property, AllowMultiple = true)]
+    internal class AlternateNameAttribute : Attribute
+    {
+        public AlternateNameAttribute(string name) => Name = name;
+        public string Name { get; }
     }
 }

@@ -55,8 +55,11 @@ namespace Tests
             var ex = Assert.Throws<InvalidOperationException>(() => fooSection.Create<StringContainer>(valueConverters: valueConverters));
 
 #if DEBUG
-            var expected = Exceptions.ResultCannotBeNull(typeof(string), typeof(StringContainer), "Bar");
+            var expectedInner = Exceptions.ResultCannotBeNull(typeof(string), typeof(StringContainer), "Bar");
+            var expected = Exceptions.CannotConvertSectionValueToTargetType(fooSection.GetSection("bar"), typeof(string), expectedInner);
+
             Assert.Equal(expected.Message, ex.Message);
+            Assert.Equal(expectedInner.Message, ex.InnerException.Message);
 #endif
         }
 
@@ -342,6 +345,7 @@ namespace Tests
         [InlineData(typeof(TimeSpan))]
         [InlineData(typeof(Uri))]
         [InlineData(typeof(Encoding))]
+        [InlineData(typeof(Type))]
         [InlineData(typeof(IsDecoratedWithConvertMethod))]
         public void GivenABranchNodeWhenTheMemberTypeRequiresALeafNode_ThrowsInvalidOperationException(Type type)
         {
@@ -418,7 +422,8 @@ namespace Tests
 #if DEBUG
             var constructorOrderInfo = new ConstructorOrderInfo(
                 typeof(TwoArgConstructor).GetTypeInfo().GetConstructors()[0],
-                new Dictionary<string, IConfigurationSection> { { "bar", null } });
+                new Dictionary<string, IConfigurationSection> { { "bar", null } },
+                Resolver.Empty);
             var expected = Exceptions.MissingRequiredConstructorParameters(fooSection, constructorOrderInfo);
             Assert.Equal(expected.Message, actual.Message);
 #endif

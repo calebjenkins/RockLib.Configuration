@@ -10,7 +10,7 @@ namespace RockLib.Configuration.ObjectFactory
     /// A container for functions that are used to convert a configuration string value to a
     /// target type.
     /// </summary>
-    public sealed class ValueConverters : IValueConverters, IEnumerable<KeyValuePair<string, Type>>
+    public sealed class ValueConverters : IEnumerable<KeyValuePair<string, Type>>
     {
         private readonly Dictionary<string, ValueConverter> _converters = new Dictionary<string, ValueConverter>(StringComparer.OrdinalIgnoreCase);
 
@@ -40,13 +40,13 @@ namespace RockLib.Configuration.ObjectFactory
 
         /// <summary>
         /// Configures a converter for the specified target type. Use this method when you want all
-        /// members (properties or constructor parameters) of the target type to use the same converter.
-        /// If you need different members of a target type to each use a different converter, use
+        /// instances of the target type to use the same converter. If you need instances of the target
+        /// type to each use a different converter depending on which member is being populated, use
         /// the other <see cref="Add{T}(Type, string, Func{string, T})"/> method.
         /// </summary>
-        /// <param name="targetType">A type that needs a default type.</param>
+        /// <param name="targetType">A type that needs a converter.</param>
         /// <param name="convertFunc">A function that does the conversion from string to <typeparamref name="T"/>.</param>
-        /// <returns>This instance of <see cref="DefaultTypes"/>.</returns>
+        /// <returns>This instance of <see cref="ValueConverters"/>.</returns>
         /// <exception cref="ArgumentNullException">
         /// If <paramref name="targetType"/> or <paramref name="convertFunc"/> is null.
         /// </exception>
