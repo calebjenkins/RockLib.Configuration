@@ -829,7 +829,16 @@ namespace RockLib.Configuration.ObjectFactory
                         if (Resolver.TryResolve(parameters[i], out object arg))
                             args[i] = arg;
                         else if (parameters[i].HasDefaultValue)
-                            args[i] = parameters[i].DefaultValue;
+                        {
+                            if (parameters[i].DefaultValue != null)
+                            {
+                                var underlyingType = Nullable.GetUnderlyingType(parameters[i].ParameterType);
+                                if (underlyingType != null && underlyingType.GetTypeInfo().IsEnum)
+                                    args[i] = Enum.ToObject(underlyingType, parameters[i].DefaultValue);
+                                else
+                                    args[i] = parameters[i].DefaultValue;
+                            }
+                        }
                     }
                 }
                 return args;

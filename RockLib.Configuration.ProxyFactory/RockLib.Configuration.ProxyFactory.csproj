@@ -6,25 +6,27 @@
 
   <PropertyGroup>
     <PackageId>RockLib.Configuration.ProxyFactory</PackageId>
-    <PackageVersion>1.0.2</PackageVersion>
-    <Authors>Quicken Loans</Authors>
+    <PackageVersion>1.0.4</PackageVersion>
+    <Authors>RockLib</Authors>
     <Description>Creates proxy objects from interfaces using IConfiguration and IConfigurationSection objects.</Description>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <PackageReleaseNotes></PackageReleaseNotes>
     <PackageProjectUrl>https://github.com/RockLib/RockLib.Configuration/tree/master/RockLib.Configuration.ProxyFactory</PackageProjectUrl>
-    <PackageLicenseFile>LICENSE</PackageLicenseFile>
-    <Copyright>Copyright 2017 (c) Quicken Loans Corporation. All rights reserved.</Copyright>
+    <PackageLicenseFile>LICENSE.md</PackageLicenseFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <Copyright>Copyright 2017-2020 (c) Quicken Loans Corporation. All rights reserved.</Copyright>
     <PackageTags>Configuration Factory Proxy IConfiguration IConfigurationSection</PackageTags>
     <Version>1.0.0</Version>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="..\LICENSE" Pack="true" PackagePath="" />
+    <None Include="..\LICENSE.md" Pack="true" PackagePath="" />
+    <None Include="..\icon.png" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="RockLib.Configuration.ObjectFactory" Version="1.1.4" />
+    <PackageReference Include="RockLib.Configuration.ObjectFactory" Version="1.6.3" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)'=='netstandard1.6' Or '$(TargetFramework)'=='netstandard2.0'">

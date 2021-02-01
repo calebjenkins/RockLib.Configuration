@@ -167,7 +167,6 @@ namespace Tests
             Assert.Equal("e", none.thingfive);
         }
 
-
         [Fact]
         public void CanHandleUPPERCasedWORDS()
         {
@@ -673,6 +672,19 @@ namespace Tests
             Assert.Equal(123, foo.Bar);
             Assert.Equal(now, foo.Baz);
             Assert.True(foo.Qux);
+        }
+
+        [Fact]
+        public void CanBindToOptionalNullableConstructorParameters()
+        {
+            var config = new ConfigurationBuilder().Build();
+
+            var foo = config.Create<HasOptionalNullableConstructorParameters>();
+
+            Assert.Equal(5, foo.Bar);
+            Assert.Equal(10.2m, foo.Baz);
+            Assert.Equal(Flags.Grault, foo.Flag);
+            Assert.Null(foo.Flag2);
         }
 
         [Fact]
@@ -3006,6 +3018,22 @@ namespace Tests
         }
         public bool Qux { get; }
         public double Garply { get; }
+    }
+
+    public class HasOptionalNullableConstructorParameters
+    {
+        public HasOptionalNullableConstructorParameters(int? bar = 5, decimal? baz = 10.2m, Flags? flag = Flags.Grault, Flags? flag2 = null)
+        {
+            Bar = bar;
+            Baz = baz;
+            Flag = flag;
+            Flag2 = flag2;
+        }
+
+        public int? Bar { get; }
+        public decimal? Baz { get; }
+        public Flags? Flag { get; }
+        public Flags? Flag2 { get; }
     }
 
     public class InheritedHasConstructorParameters : HasConstructorParameters
